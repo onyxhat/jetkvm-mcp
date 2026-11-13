@@ -32,7 +32,7 @@ os.environ["JETKVM_CONFIG"] = CONFIG
 os.environ.pop("JETKVM_URL", None)
 
 import server  # noqa: E402
-from jetkvm.devices import load_devices  # noqa: E402
+from jetkvm.devices import ConfigError, load_devices  # noqa: E402
 from jetkvm.pool import DeviceError, DevicePool  # noqa: E402
 
 
@@ -115,6 +115,21 @@ async def main() -> None:
 
 
 asyncio.run(main())
+
+
+# ── transport: stdio by default, streamable HTTP for a shared container ─────
+check(server.transport_settings({}) == ("stdio", "127.0.0.1", 8000), "stdio by default")
+check(server.transport_settings({"JETKVM_MCP_TRANSPORT": "HTTP", "JETKVM_MCP_HOST": "0.0.0.0",
+                                 "JETKVM_MCP_PORT": "9000"}) == ("streamable-http", "0.0.0.0", 9000),
+      "http settings")
+for env, bad_value in (({"JETKVM_MCP_TRANSPORT": "carrier-pigeon"}, "carrier-pigeon"),
+                       ({"JETKVM_MCP_TRANSPORT": "http", "JETKVM_MCP_PORT": "eighty"}, "eighty"),
+                       ({"JETKVM_MCP_TRANSPORT": "http", "JETKVM_MCP_PORT": "70000"}, "70000")):
+    try:
+        server.transport_settings(env)
+        failures.append(f"no ConfigError for {env}")
+    except ConfigError as e:
+        check(bad_value in str(e), f"error should name {bad_value!r}: {e}")
 
 
 def run_import(env_extra: dict, code: str) -> subprocess.CompletedProcess:

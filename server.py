@@ -22,27 +22,50 @@ or one device (named "default"):
   JETKVM_VERIFY_TLS  "true" to verify the cert (default false; device uses self-signed)
   JETKVM_KEYBOARD_LAYOUT  layout active on the *target* OS: us (default), uk, de, fr.
                           Wrong layout = wrong characters, silently — see keyboard_layout.
+
+Transport:
+  JETKVM_MCP_TRANSPORT  stdio (default) or http — streamable HTTP at /mcp, so one
+                        long-running server (one session per device) serves every client
+  JETKVM_MCP_HOST       http bind address (default 127.0.0.1 — the endpoint has no auth)
+  JETKVM_MCP_PORT       http port (default 8000)
 """
 
 from __future__ import annotations
 
 import os
 import logging
-from typing import Annotated
+from typing import Annotated, Mapping
 
 from mcp.server.fastmcp import FastMCP, Image
 from pydantic import Field
 
 from jetkvm import JetKVMClient, keymap
-from jetkvm.devices import load_devices
+from jetkvm.devices import ConfigError, load_devices
 from jetkvm.pool import DevicePool
 
 logging.basicConfig(level=logging.INFO)
 
-mcp = FastMCP("jetkvm")
+_TRANSPORTS = {"stdio": "stdio", "http": "streamable-http"}
 
-# Built at import so a config mistake stops the server at startup, not mid-command.
+
+def transport_settings(env: Mapping[str, str]) -> tuple[str, str, int]:
+    """(FastMCP transport, host, port) from the JETKVM_MCP_* env vars."""
+    raw = env.get("JETKVM_MCP_TRANSPORT", "").strip() or "stdio"
+    transport = _TRANSPORTS.get(raw.lower())
+    if transport is None:
+        raise ConfigError(f"JETKVM_MCP_TRANSPORT {raw!r} must be one of: {', '.join(_TRANSPORTS)}")
+    host = env.get("JETKVM_MCP_HOST", "").strip() or "127.0.0.1"
+    port_raw = env.get("JETKVM_MCP_PORT", "").strip() or "8000"
+    if not port_raw.isdigit() or not 1 <= int(port_raw) <= 65535:
+        raise ConfigError(f"JETKVM_MCP_PORT {port_raw!r} must be a port number (1-65535)")
+    return transport, host, int(port_raw)
+
+
+# Both read at import so a config mistake stops the server at startup, not mid-command.
+_transport, _host, _port = transport_settings(os.environ)
 pool = DevicePool(load_devices(os.environ))
+logging.info("JetKVM devices: %s", ", ".join(pool.names()))
+mcp = FastMCP("jetkvm", host=_host, port=_port)
 logging.info("JetKVM devices: %s", ", ".join(pool.names()))
 
 Device = Annotated[str, Field(
@@ -292,4 +315,4 @@ async def reboot_device(force: bool = False, device: Device = "") -> str:
 
 
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run(transport=_transport)
