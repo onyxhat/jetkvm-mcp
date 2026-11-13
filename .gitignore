@@ -9,3 +9,7 @@ __pycache__/
 
 # macOS
 .DS_Store
+
+# local working notes — implementation plans and trail learnings stay on this machine
+/docs/superpowers/
+/.trail/
