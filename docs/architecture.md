@@ -45,8 +45,10 @@ firmware and treats this client exactly like its own web UI.
 
 ### Reconnect / device restarts
 
-The server keeps one cached connection, and every tool call health-checks it first:
-`kvm()` sends an RPC `ping` with a 3 s timeout (any response — even a JSON-RPC error —
+The server keeps one cached connection per device (`DevicePool` in `jetkvm/pool.py`, each
+behind its own lock, so a device that is rebooting never stalls calls to another), and every
+tool call health-checks the connection it is about to use first:
+`DevicePool.client()` sends an RPC `ping` with a 3 s timeout (any response — even a JSON-RPC error —
 proves the channel round-trips; `JetKVMDisconnected` or silence means dead). On failure it
 closes the old client and builds a fresh connection, so a JetKVM reboot or network blip
 heals transparently on the next tool call — no server restart needed. When the peer

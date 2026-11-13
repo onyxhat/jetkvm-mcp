@@ -23,6 +23,10 @@ Works against **stock JetKVM firmware** — no modifications to the device.
 |-------|-------|--------|
 | **Screen control** (eyes + hands) | `screenshot`, `click`, `double_click`, `move_mouse`, `type_text`, `press_key`, `keyboard_layout`, `scroll` | vision loop — the AI looks, then acts |
 | **Device control** | `mount_media_url`, `mount_media_storage`, `upload_media`, `upload_and_mount`, `unmount_media`, `list_storage`, `delete_storage_file`, `storage_space`, `virtual_media_state`, `power`, `power_state`, `dc_power`, `wake_host`, `wol`, `usb_emulation`, `video_state`, `reboot_device` | deterministic RPC |
+| **Devices** | `list_devices` | which JetKVMs this server drives — see [Multiple devices](#multiple-devices) |
+
+Every tool takes an optional `device` argument naming the JetKVM to act on; it can be left
+out when only one is configured.
 
 Full parameter reference: [docs/tools.md](docs/tools.md).
 
@@ -178,6 +182,73 @@ The `-i` flag keeps stdin open so Claude Desktop can speak MCP over stdio to the
 Replace `http://192.168.1.50` with your device's address and set `JETKVM_PASSWORD` if your
 device has one.
 
+## Multiple devices
+
+One server can drive every JetKVM you own. Name them in a JSON file and point
+`JETKVM_CONFIG` at it (instead of `JETKVM_URL`):
+
+```json
+{
+  "devices": {
+    "office": {"url": "http://192.168.1.50"},
+    "lab":    {"url": "https://10.0.0.7", "password": "s3cret", "verify_tls": true, "keyboard_layout": "de"}
+  }
+}
+```
+
+Only `url` is required; `password` defaults to empty, `verify_tls` to `false`, and
+`keyboard_layout` to `us`. Names are lowercase letters, digits, `-` and `_`. Any mistake —
+an unknown key, `"verify_tls": "false"` as a string, a URL without `http://` — stops the
+server at startup with a message naming the device and field. Keep the file out of git;
+`devices.json` is already ignored, and it is excluded from the Docker image.
+
+The AI calls `list_devices` to see what is there, then passes `device="lab"` to any tool.
+With more than one device configured, a call that leaves `device` out is refused — nothing
+is sent anywhere — so `power` or `reboot_device` can never land on the wrong machine by
+default. Each device keeps its own connection and keyboard layout, and a device that is
+offline or rebooting doesn't hold up the others.
+
+**One container for every client (recommended).** Each JetKVM serves one session at a time,
+and a new session knocks the previous one off. If every MCP client launches its own stdio
+container, two clients pointed at the same device will keep displacing each other. Instead,
+run one long-lived container that speaks MCP over HTTP and holds one session per device for
+everyone:
+
+```bash
+docker run -d --name jetkvm-mcp --restart unless-stopped \
+  -p 127.0.0.1:8000:8000 \
+  -v "$PWD/devices.json:/config/devices.json:ro" \
+  -e JETKVM_CONFIG=/config/devices.json \
+  -e JETKVM_MCP_TRANSPORT=http \
+  -e JETKVM_MCP_HOST=0.0.0.0 \
+  jetkvm-mcp
+```
+
+Then point each client at it:
+
+```bash
+claude mcp add --transport http jetkvm http://127.0.0.1:8000/mcp
+```
+
+`JETKVM_MCP_HOST=0.0.0.0` is the bind address *inside* the container; the `-p
+127.0.0.1:8000:8000` publish is what keeps it on your machine. **The HTTP endpoint has no
+authentication and can power machines off** — don't publish it beyond localhost or a network
+you fully trust. `JETKVM_MCP_PORT` changes the port (default `8000`).
+
+**One container per client (stdio)** still works — add the mount and `JETKVM_CONFIG` to the
+`docker run` from the [Docker](#docker) section — as long as no two clients use the same
+device at once.
+
+Notes:
+
+- The container runs as `appuser` (uid 1000), which must be able to read the mounted file:
+  `chmod 644 devices.json`, or `chown 1000 devices.json` to keep it private. An unreadable
+  file stops the server with an error naming the path.
+- `python smoke_test.py lab` checks one device from the config (`docker run --rm -v … -e
+  JETKVM_CONFIG=… jetkvm-mcp python smoke_test.py lab`).
+- Two AIs driving the *same* device at the same moment will interleave their mouse and
+  keyboard input; nothing serialises them.
+
 ## The killer workflow: hands-free bare-metal provisioning
 
 Device control and screen control compose into something no in-OS agent can do — installing an
@@ -209,7 +280,7 @@ the partition is full.
   `z` arrives as `y`, `&` as `/`, `@` as `"`, which reads like a typo, not a bug. Set it:
 
   ```
-  keyboard_layout("de")            # or JETKVM_KEYBOARD_LAYOUT=de in the server env
+  keyboard_layout("de")            # or JETKVM_KEYBOARD_LAYOUT=de / "keyboard_layout" in devices.json
   type_text("Get-ChildItem C:\\", layout="de")   # or per call
   ```
 
@@ -246,10 +317,15 @@ This lets a language model drive a real computer with real consequences. Recomme
 ```
 jetkvm/client.py   WebRTC + JSON-RPC client (connect, snapshot, HID input, uploads)
 jetkvm/keymap.py   per-layout character / key-combo → USB HID usage codes
-server.py          FastMCP server exposing the 25 tools
+jetkvm/devices.py  device config: JETKVM_CONFIG file or the single-device env vars
+jetkvm/pool.py     one lazily-connected client, lock and keyboard layout per device
+server.py          FastMCP server exposing the 26 tools (stdio or streamable HTTP)
 smoke_test.py      live end-to-end check against a real device
 keymap_test.py     offline check of the layout tables (no device needed)
 signaling_test.py  offline check of the signaling websocket's TLS handling
+devices_test.py    offline check of device config loading
+pool_test.py       offline check of the per-device connection pool
+server_test.py     offline check of tool → device routing and transport settings
 docs/              architecture + tool reference
 ```
 

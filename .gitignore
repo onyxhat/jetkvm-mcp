@@ -1,5 +1,6 @@
 # local config — contains your device address/password
 .env
+devices.json
 
 # python
 .venv/

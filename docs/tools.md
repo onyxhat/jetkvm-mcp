@@ -1,8 +1,19 @@
 # Tool reference
 
-All 25 MCP tools exposed by `server.py`. The first tool call establishes the device
+All 26 MCP tools exposed by `server.py`. The first tool call to a device establishes its
 connection (expect ~3 s extra for the first `screenshot`; see
 [architecture.md](architecture.md#video-the-keyframepli-story-the-trap)).
+
+**Every tool except `list_devices` also takes `device=""`**, the name of the JetKVM to act on
+(see the README's *Multiple devices*). It may be omitted only when one device is configured;
+otherwise the call fails, listing the names, before anything is sent. Names match
+case-insensitively.
+
+## Devices
+
+| Tool | Parameters | Behavior |
+|------|------------|----------|
+| `list_devices` | — | `{devices: [{name, url, keyboard_layout, connected}]}`. No passwords, no network I/O. |
 
 ## Screen control — the vision loop
 
@@ -14,7 +25,7 @@ connection (expect ~3 s extra for the first `screenshot`; see
 | `move_mouse` | `x`, `y` | Move pointer without clicking (hover). |
 | `type_text` | `text`, `layout=""` | Type a string on the emulated USB keyboard, using the active keyboard layout. `layout` overrides it for one call. Characters the layout can't produce are **named in the return value**, not silently dropped. |
 | `press_key` | `combo`, `layout=""` | A key or chord: `enter`, `esc`, `tab`, `f2`, arrow keys, `ctrl+c`, `ctrl+alt+delete`, `win+r`, `cmd+shift+4`, `altgr+q`, … Character keys resolve through the active layout, so `ctrl+z` presses the target's real Z. |
-| `keyboard_layout` | `layout=""` | Read the active layout and the available ones; pass a name to switch. **The target's layout, not yours.** `us` (default), `uk`, `de`, `fr`, plus aliases (`German`, `en-GB`, `azerty`, …). |
+| `keyboard_layout` | `layout=""` | Read the device's active layout and the available ones; pass a name to switch it for that device only (it outlives reconnects, not server restarts). **The target's layout, not yours.** `us` (default), `uk`, `de`, `fr`, plus aliases (`German`, `en-GB`, `azerty`, …). |
 | `scroll` | `amount` | Wheel detents; positive = up, negative = down. |
 
 ## Virtual media
@@ -50,3 +61,5 @@ Consider gating these behind per-call confirmation in your MCP client:
 `power`, `dc_power`, `reboot_device`, `mount_media_url`, `mount_media_storage`,
 `upload_and_mount`, `unmount_media`, `delete_storage_file`, `usb_emulation`, and `press_key`
 with reboot chords.
+
+With several devices configured, these refuse to run unless the call names its `device`.
