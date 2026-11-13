@@ -132,6 +132,24 @@ for env, bad_value in (({"JETKVM_MCP_TRANSPORT": "carrier-pigeon"}, "carrier-pig
         check(bad_value in str(e), f"error should name {bad_value!r}: {e}")
 
 
+# ── HTTP mode checks the Host header whatever it binds to ───────────────────
+# In Docker the server binds 0.0.0.0, where FastMCP would otherwise skip the check,
+# letting a web page that rebinds its domain to 127.0.0.1 drive every device.
+HOST_CHECK = """
+import server
+from starlette.testclient import TestClient
+init = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+    "protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "t", "version": "0"}}}
+with TestClient(server.mcp.streamable_http_app()) as http:
+    for host in ("evil.example:8000", "localhost:8000"):
+        r = http.post("/mcp", json=init, headers={"Host": host, "Accept": "application/json, text/event-stream"})
+        print(r.status_code)
+"""
+lan = server.transport_security({"JETKVM_MCP_ALLOWED_HOSTS": "kvm.lan, 10.0.0.5"})
+check(lan.enable_dns_rebinding_protection and {"kvm.lan:*", "10.0.0.5:*", "localhost:*"} <= set(lan.allowed_hosts),
+      f"JETKVM_MCP_ALLOWED_HOSTS extends the allowed hosts: {lan.allowed_hosts}")
+
+
 def run_import(env_extra: dict, code: str) -> subprocess.CompletedProcess:
     env = {k: v for k, v in os.environ.items() if not k.startswith("JETKVM_")}
     env.update(env_extra)
@@ -144,6 +162,11 @@ check(bad.returncode != 0 and "/nonexistent/devices.json" in bad.stderr,
       "a bad config stops the server at startup, naming the file")
 legacy = run_import({"JETKVM_URL": "http://10.0.0.9"}, "import server; print(server.pool.names())")
 check(legacy.stdout.strip() == "['default']", f"legacy env still works: {legacy.stdout}{legacy.stderr}")
+docker_bind = run_import({"JETKVM_URL": "http://10.0.0.9", "JETKVM_MCP_TRANSPORT": "http",
+                          "JETKVM_MCP_HOST": "0.0.0.0"}, HOST_CHECK)
+check(docker_bind.stdout.split() == ["421", "200"],
+      f"bound to 0.0.0.0, a foreign Host is rejected and localhost accepted: "
+      f"{docker_bind.stdout!r} {docker_bind.stderr[-300:]}")
 
 
 if failures:

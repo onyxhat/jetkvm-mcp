@@ -77,6 +77,7 @@ expect_error(cfg({"lab": {"url": "192.168.1.5"}}), "lab", "http://")
 expect_error(cfg({"lab": {"url": "http://x", "pasword": "pw"}}), "lab", "pasword")
 expect_error(cfg({"lab": {"url": "http://x", "verify_tls": "false"}}), "lab", "verify_tls")
 expect_error(cfg({"lab": {"url": "http://x", "keyboard_layout": "klingon"}}), "lab", "klingon")
+expect_error(cfg({"lab": {"url": "http://x", "keyboard_layout": 5}}), "lab", "keyboard_layout")
 expect_error({"JETKVM_URL": "http://x", "JETKVM_KEYBOARD_LAYOUT": "klingon"}, "klingon")
 if os.geteuid() != 0:  # root reads anything
     locked = config_file({"devices": {"lab": {"url": "http://x"}}})

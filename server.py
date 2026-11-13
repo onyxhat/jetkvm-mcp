@@ -28,6 +28,8 @@ Transport:
                         long-running server (one session per device) serves every client
   JETKVM_MCP_HOST       http bind address (default 127.0.0.1 — the endpoint has no auth)
   JETKVM_MCP_PORT       http port (default 8000)
+  JETKVM_MCP_ALLOWED_HOSTS  extra comma-separated hostnames clients may use to reach the
+                        http server; localhost is always allowed, anything else is refused
 """
 
 from __future__ import annotations
@@ -37,6 +39,7 @@ import logging
 from typing import Annotated, Mapping
 
 from mcp.server.fastmcp import FastMCP, Image
+from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import Field
 
 from jetkvm import JetKVMClient, keymap
@@ -61,11 +64,25 @@ def transport_settings(env: Mapping[str, str]) -> tuple[str, str, int]:
     return transport, host, int(port_raw)
 
 
-# Both read at import so a config mistake stops the server at startup, not mid-command.
+def transport_security(env: Mapping[str, str]) -> TransportSecuritySettings:
+    """Host/Origin checks for the http transport, on whatever address it binds.
+
+    FastMCP only enables them for a 127.0.0.1 bind, but in Docker the server binds
+    0.0.0.0 — and without them a web page that rebinds its domain to 127.0.0.1
+    could drive every device."""
+    names = ["127.0.0.1", "localhost", "[::1]"]
+    names += [h.strip() for h in env.get("JETKVM_MCP_ALLOWED_HOSTS", "").split(",") if h.strip()]
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=[h for n in names for h in (n, f"{n}:*")],
+        allowed_origins=[o for n in names for s in ("http", "https") for o in (f"{s}://{n}", f"{s}://{n}:*")],
+    )
+
+
+# Read at import so a config mistake stops the server at startup, not mid-command.
 _transport, _host, _port = transport_settings(os.environ)
 pool = DevicePool(load_devices(os.environ))
-logging.info("JetKVM devices: %s", ", ".join(pool.names()))
-mcp = FastMCP("jetkvm", host=_host, port=_port)
+mcp = FastMCP("jetkvm", host=_host, port=_port, transport_security=transport_security(os.environ))
 logging.info("JetKVM devices: %s", ", ".join(pool.names()))
 
 Device = Annotated[str, Field(

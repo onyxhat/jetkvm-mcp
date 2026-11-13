@@ -235,6 +235,11 @@ claude mcp add --transport http jetkvm http://127.0.0.1:8000/mcp
 authentication and can power machines off** — don't publish it beyond localhost or a network
 you fully trust. `JETKVM_MCP_PORT` changes the port (default `8000`).
 
+The server only answers requests addressed to `localhost` / `127.0.0.1` (it checks the `Host`
+and `Origin` headers), so a web page can't reach it through DNS rebinding. If clients on a
+trusted network reach it by another name or address, list those in
+`JETKVM_MCP_ALLOWED_HOSTS` (comma-separated, e.g. `kvm-mcp.lan,192.168.1.20`).
+
 **One container per client (stdio)** still works — add the mount and `JETKVM_CONFIG` to the
 `docker run` from the [Docker](#docker) section — as long as no two clients use the same
 device at once.

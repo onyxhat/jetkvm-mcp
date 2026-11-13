@@ -99,8 +99,11 @@ def _device(name: str, spec) -> DeviceConfig:
     verify_tls = spec.get("verify_tls", False)
     if not isinstance(verify_tls, bool):  # "false" is a truthy string
         raise ConfigError(f"device {name!r}: verify_tls must be true or false, not {verify_tls!r}")
+    layout = spec.get("keyboard_layout", "us")
+    if not isinstance(layout, str):
+        raise ConfigError(f"device {name!r}: keyboard_layout must be a string, not {layout!r}")
     try:
-        layout = keymap.normalize_layout(spec.get("keyboard_layout", "us"))
+        layout = keymap.normalize_layout(layout)
     except ValueError as e:
         raise ConfigError(f"device {name!r}: {e}") from e
     return DeviceConfig(name, url, password, verify_tls, layout)
