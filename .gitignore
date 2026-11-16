@@ -1,5 +1,6 @@
 # local config — contains your device address/password
 .env
+devices.json
 
 # python
 .venv/
@@ -8,3 +9,11 @@ __pycache__/
 
 # macOS
 .DS_Store
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
+
+# local working notes — implementation plans and trail learnings stay on this machine
+/docs/superpowers/
+/.trail/
+/.zvec-grep/
